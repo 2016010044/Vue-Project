@@ -1,0 +1,428 @@
+1.构建项目（本项目使用vue-cli脚手架搭建项目，就是把项目的架子搭出来）vue create 项目名称，创建好后，先运行一下：npm run serve
+还可以基于webpack搭建项目： vue init webpack 项目名
+
+2.解决在命令行中上下键不起作用的问题：winpty vue.cmd create
+
+3.配置文件目录：
+在src目录下配置需要的目录文件
+components：项目用到的公共组件，
+config:项目用到的配置文件（就像格式化时间，还有计算rem，还有地区数据，过滤器等）
+images:图片
+plugins:三方的组件库
+router：路由文件
+service：服务器相关，这里封装了axios,还有调用接口的文件
+store：vuex
+style:全局样式文件
+views:所有页面相关的
+
+4.配置main.js:
+引入路由和store：
+import router from './router/index'
+import store from './store/index'
+接着
+new Vue({
+  router,
+  store,
+  render: h => h(App)
+}).$mount('#app');
+
+5.配置fastclick
+它消除了移动端浏览器上的物理点击和触发一个 click 事件之间的 300ms 的延迟，原理：在检测到touchend事件的时候，会通过DOM自定义事件立即出发模拟一个click事件，并把浏览器在300ms之后真正的click事件阻止掉。
+为什么会存在延迟：原因是浏览器会等待看你的行为是否会是双击
+使用：在main.js中：
+import FastClick from 'fastclick'
+if ('addEventListener' in document) {
+  document.addEventListener('DOMContentLoaded', function() {
+    FastClick.attach(document.body);
+  }, false);
+}
+
+6.配置一级路由
+在router/index.js下：
+import Vue from 'vue'
+import Router from 'vue-router'
+Vue.use(Router);
+
+//引入
+import DashBoard from './../views/dashboard/DashBoard'
+const Home = ()=> import('./../views/home/Home.vue');//懒加载
+
+export default new Router({
+    routes: [
+        {path: '/', redirect: '/dashboard'},
+        {
+          path: '/dashboard',
+          name: 'dashboard',
+          component: DashBoard,
+          children: [
+              {path: '/dashboard', redirect: '/dashboard/home'},
+              {path: 'home', name:'home', component: Home, meta: { keepAlive: true}},
+              {path: 'category', name:'category', component: Category, meta: { keepAlive: true}},
+              {path: 'cart', name:'cart', component: Cart},
+              {
+                  path: 'mine',
+                  name:'mine',
+                  component: Mine,
+                  children: [
+                      {path: 'userCenter', component: UserCenter}, // 用户中心
+                      {path: 'mineOrder', component: MineOrder} // 我的订单
+                  ]
+              }
+          ]
+        },
+        {
+            path: '/confirmOrder',
+            name: 'order',
+            component: Order,
+            children: [
+                {
+                    path:'myAddress',
+                    name: 'myAddress',
+                    component: MyAddress,
+                    children: [
+                        // 添加地址
+                        {path: 'addAddress', name:'addAddress', component: AddAddress},
+                        {path: 'editAddress', name:'editAddress', component: EditAddress},
+                    ]
+                },
+                {
+                    path: 'orderDetail',
+                    name: 'orderDetail',
+                    component: OrderDetail
+                }
+            ]
+        },
+        {path: '/login', name: 'login', component: Login}
+    ]
+});
+
+7.集成vant组件库
+
+npm i vant –S
+npm i babel-plugin-import -D   //按需加载
+
+配置babel.config.js:
+module.exports = {
+  presets: [
+    '@vue/app'
+  ],
+  plugins: [
+    ['import', {
+      libraryName: 'vant',
+      libraryDirectory: 'es',
+      style: true
+    }, 'vant']
+  ]
+};
+接着在plugins/vant.js:
+import Vue from 'vue'
+// 1. 底部的导航
+import { Tabbar } from 'vant';
+Vue.use(Tabbar);
+
+接着在全局中引入vant.js:这样在vant.js中引入的全局都能用了。
+// 2. 引入全局的样式
+import '@/style/common.less'
+// 3. 引入全局UI组件库-vant
+import '@/plugins/vant'
+
+8.使用vant集成底部导航栏：
+
+1）.首先在App.vue中配置路由出口：
+ <div id="app">
+        <router-view></router-view>
+ </div>
+这儿的路由出口对应的就是路由index.js下的routes下的一级，dashboard对应的二级，就像Cart，Home这些
+2）.使用到的组件：Tabbar, TabbarItem，在dashboard中集成，
+<template>
+    <div id="dashboard">
+        <van-tabbar v-model="active" active-color="#75a342">
+            <van-tabbar-item replace to="/dashboard/home">
+                <span>首页</span>
+                <img slot="icon" slot-scope="props" :src="props.active ? home_icon.active : home_icon.normal">
+            </van-tabbar-item>
+            <van-tabbar-item replace to="/dashboard/category">
+                <span>分类</span>
+                <img slot="icon" slot-scope="props" :src="props.active ? category_icon.active : category_icon.normal">
+            </van-tabbar-item>
+            <van-tabbar-item replace to="/dashboard/cart" :info="goodsNum > 0 ? goodsNum : ''">
+                <span>购物车</span>
+                <img slot="icon" slot-scope="props" :src="props.active ? cart_icon.active : cart_icon.normal">
+            </van-tabbar-item>
+            <van-tabbar-item replace to="/dashboard/mine">
+                <span>我的</span>
+                <img slot="icon" slot-scope="props" :src="props.active ? mine_icon.active : mine_icon.normal">
+            </van-tabbar-item>
+        </van-tabbar>
+        <keep-alive>
+            <router-view v-if="$route.meta.keepAlive"/>
+        </keep-alive>
+        <router-view v-if="!$route.meta.keepAlive"/>
+    </div>
+</template>
+
+/*
+为了解决每次到首页或者其他页面都要请求数据的问题（也就是说每次到首页并不需要请求数据，第一次请求就好）：
+1）.需要在路由中加上：meta: { keepAlive: true}
+{path: 'home', name:'home', component: Home, meta: { keepAlive: true}},
+{path: 'category', name:'category', component: Category, meta: { keepAlive: true}},
+2）.需要在用<keep-alive>包住路由出口：
+<keep-alive>
+            <router-view v-if="$route.meta.keepAlive"/>
+        </keep-alive>
+        <router-view v-if="!$route.meta.keepAlive"/>
+
+3）.replace to:路由跳转
+4）.  :src在前面加：会去解析，不加的话直接当字符串处理，解析后，再将值赋给src。
+5）.slot:插槽，因为点击之后会有新的icon,slot-scope="props"取到当前单元格。插槽分为1).具名插槽：<slot ="icon"/>   2).默认插槽<slot/>  3)作用域插槽：父组件通过 “slot-scope” 来接收子组件传过来的插槽数据
+5.v-model：<input v-model="test">本质上是<input :value="test" @input="test = $event.target.value">，这里的v-model="active"就是监听点击的下标，用watch来监听，默认是在data中的active,只有当发生变化是触发watch,然后将变化的值交给data，从而拿到active的值。
+
+6）.本地缓存：localStorage,sessionStorage
+**/
+<script>
+ data() {
+            return {
+                active: Number(sessionStorage.getItem('tabBarActiveIndex')) || 0,
+                home_icon: {
+                    normal: require('@/images/tabbar/home_default.png'),
+                    active: require('@/images/tabbar/home_selected.png')
+                },
+                category_icon: {
+                    normal: require('@/images/tabbar/category_default.png'),
+                    active: require('@/images/tabbar/category_selected.png')
+                },
+                cart_icon: {
+                    normal: require('@/images/tabbar/shoppingcart_default.png'),
+                    active: require('@/images/tabbar/shoppingcart_selected.png')
+                },
+                mine_icon: {
+                    normal: require('@/images/tabbar/mine_default.png'),
+                    active: require('@/images/tabbar/mine_selected.png')
+                },
+            }
+        },
+        watch: {
+            active(value){
+                // console.log(value);
+                let tabBarActiveIndex = value > 0 ? value : 0;
+                // 缓存到本地
+                sessionStorage.setItem('tabBarActiveIndex', value);
+            }
+        },
+<script/>
+
+
+9.vue为什么是单入口，Vue需要将入口的所有东西拿来渲染、处理，最后再重新插入到dom中，dom其实是一个树，有树就有根，Vue重新插入dom的时候，如果有多个根，它也无法确定插在哪一棵树上，默认只插在第一颗树上。
+
+10.首页相关
+准备：调用接口前的准备。
+封装axios:
+import axios from 'axios'
+export default function ajax(url = '', params = {}, type = 'GET') {
+    // 1. 变量
+    let promise;
+    // 2. 返回一个promise对象
+    return new Promise((resolve, reject) => {
+        // 2.1 判断请求的类型
+        if (type.toUpperCase() === 'GET') { // get请求
+            // 2.2 拼接字符串
+            let paramsStr = '';
+            // 2.3 遍历
+            Object.keys(params).forEach(key => {
+                paramsStr += key + '=' + params[key] + '&';
+            });
+            // 2.4 过滤最后的&
+            /*
+              注意：为了防止请求缓存，在尾部加了时间戳
+            */
+            if (paramsStr) {
+                paramsStr = paramsStr.substr(0, paramsStr.lastIndexOf('&'));
+                // 2.5 拼接完整路径
+                if(url.indexOf('47.98.157.152') === -1) {
+                    url += '?' + paramsStr + '&itlike=' + randomCode(20);
+                }else {
+                    url += '?' + paramsStr;
+                }
+            }else {
+                if(url.indexOf('47.98.157.152') === -1){
+                    url += '?itlike=' + randomCode(20)
+                }
+            }
+            // 2.6 发起get请求
+            promise = axios.get(url);
+        } else if (type.toUpperCase() === 'POST') { // post请求
+            // 2.7 发起post请求
+            promise = axios.post(url, params);
+        }
+        // 2.8 处理结果并返回
+        promise.then((response) => {
+             resolve(response.data);
+        }).catch(error => {
+             reject(error);
+        })
+    });
+
+}
+/*生成指定长度的随机数*/
+function randomCode(length) {
+    let chars = ['0','1','2','3','4','5','6','7','8','9'];
+    let result = "";
+    for(let i = 0; i < length ; i ++) {
+        let index = Math.ceil(Math.random()*9);
+        result += chars[index];
+    }
+    return result;
+}
+接着就是要调用接口了。
+import ajax from './ajax'
+// 1. 定义基础路径
+const BASE_URL = 'http://demo.itlike.com/web/xlmc';
+export const getHomeData = () => ajax(BASE_URL + '/api/homeApi');
+
+另外就是设置showLoading为初始值true，调用接口加载数据后为false，这就使用到<div v-if="!showLoading"/><div>,使用到组件为Loading：
+ <van-loading
+                v-else
+                type="spinner"
+                color="#75a342"
+                style="position: absolute;left:50%;top: 40%;transform: translate(-50%)"
+        >
+1）头部：一个定位和输入框
+<templete>{{city || '上海撩课大厦'}}</templete>
+<script>
+data(){
+            return{
+                longitude: 0, // 经度
+                latitude: 0, // 维度
+                city: '', // 城市
+            }
+        },
+        mounted() {
+           this.getLocation();
+        },
+        methods:{
+            getLocation(){
+                let geolocation = new qq.maps.Geolocation("3PXBZ-DOQK6-FQISF-M2BXT-MOETT-L6FIM", "myapp");
+                geolocation.getLocation(this.showPosition, this.showError);
+            },
+            showPosition(position){
+                console.log(position);
+                this.latitude = position.lat;
+                this.longitude = position.lng;
+                this.city = position.city;
+            },
+            showError(){
+               console.log('定位失败');
+               // 继续定位
+               this.getLocation();
+            }
+        }
+</script>
+
+2)轮播图：
+现在data中定义：sowing_list
+请求接口：在methods中：
+ async reqData() {
+                let res = await getHomeData();
+                // console.log(res);
+                if(res.success){
+                    this.sowing_list = res.data.list[0].icon_list;
+}，接着在created中调用，因为created执行的比较早，所以在data中的sowing_list已经有值了，再将值赋给子组件。
+轮播图：<Sowing :sowing_list="sowing_list"/>后边的sowing_list为父组件的，前面的是给子组件传的属性，值为后面的sowing_list，在子组件中接收：
+export default {
+        name: "Sowing",
+        props:{
+            sowing_list: Array
+        },
+}
+子组件拿到数据就要渲染了：首先需要npm install vue-awesome-swiper --save
+<swiper id="swiper" :options="swiperOption" ref="mySwiper">
+        <!-- slides -->
+        <swiper-slide v-for="(sowing, index) in sowing_list" :key="sowing.public_id">
+            <img :src="sowing.icon_url"  :alt="sowing.public_name">
+        </swiper-slide>
+        <!-- Optional controls -->
+        <div class="swiper-pagination" slot="pagination"></div>
+</swiper>
+    import 'swiper/dist/css/swiper.css'
+    import {swiper, swiperSlide} from 'vue-awesome-swiper'
+    export default {
+        name: "Sowing",
+        props:{
+            sowing_list: Array
+        },
+        data() {
+            return {
+                swiperOption: {
+                    notNextTick: true,
+                    // 分页
+                    pagination: {
+                        el: '.swiper-pagination',
+                        clickable: true
+                    },
+                    // 循环
+                    loop: true,
+                    // 切换时长
+                    autoplay: {
+                        delay: 1000
+                    },
+                    // 速度
+                    speed: 600,
+                    // 滑动后回调函数
+                    on: {
+                        slideChangeTransitionEnd() {
+                            // console.log(this.activeIndex);
+                        }
+                    }
+                }
+            }
+        },
+        computed: {
+            swiper() {
+                return this.$refs.mySwiper.swiper;
+            }
+        },
+        mounted() {
+            // this.swiper.slideTo(5, 1000, false);
+        },
+        components: {
+            swiper,
+            swiperSlide
+        }
+    }
+　ref 有三种用法：
+
+　　1、ref 加在普通的元素上，用this.ref.name 获取到的是dom元素
+
+　　2、ref 加在子组件上，用this.ref.name 获取到的是组件实例，可以使用组件的所有方法。
+
+　　3、如何利用 v-for 和 ref 获取一组数组或者dom 节点
+
+3)中部导航：原理同轮播图
+4）秒杀：静态页面原理同上
+5）猜你喜欢：静态页面原理同上
+6）返回顶部：
+<MarkPage v-if="showBackStatus" :scrollToTop="scrollToTop"/>
+showBackStatus默认为false，即默认是隐藏的，当滚到一定位置时，showBackStatus值为true
+
+import {showBack, animate} from "@/config/global";
+async reqData() {
+                let res = await getHomeData();
+                // console.log(res);
+                if(res.success){
+                    // 开始监听滚动, 到达一定位置就显示返回顶部按钮
+                    showBack((status)=>{
+                        // console.log(status);
+                        this.showBackStatus = status;
+                    });
+                }
+            },
+解释一下为什么要在此处监听，因为这个方法再created中调用，很早就加载数据了，再或者说只有数据加载到了，并且渲染到也面了它才有出现的资格。然后就是点击事件了，在methods中实现方法：
+scrollToTop() {
+                // 做缓动动画返回顶部
+                let docB = document.documentElement || document.body;
+                animate(docB, {scrollTop: '0'}, 400, 'ease-out');
+            },
+引入的showBack, animate代码在调用的时候拿过来即可。
+
+
+

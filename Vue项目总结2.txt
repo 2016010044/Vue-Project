@@ -1,0 +1,72 @@
+1.Category：
+import BScroll from 'better-scroll'
+左边用到一个滚动的插件：better-scroll，使用注意事项就是等待数据全部请求完初始化生效
+<div class="leftWrapper">
+                <ul class="wrapper">
+                    <li
+                        class="categoryItem"
+                        v-for="(cate, index) in categoriesData"
+                        :class="{selected: currentIndex === index}"
+                        @click="clickLeftLi(index)"
+                        :key="cate.id"
+                        ref="menuList"
+                    >
+                        <span class="textWrapper">{{cate.name}}</span>
+                    </li>
+                </ul>
+</div>
+//右边
+<ContentView :categoriesDetailData="categoriesDetailData"/>
+categoriesData不做过多的解释：就是存放请求到的数据，:class就是给选中的加一个样式，具体看如下代码：
+ methods: {
+            // 1. 初始化操作(数据和界面)
+            async initData() {
+                // 1. 获取左边的数据
+                let leftRes = await getCategories();
+                if (leftRes.success) {
+                    this.categoriesData = leftRes.data.cate;
+                }
+
+                // 2. 获取右边的数据
+                let rightRes = await getCategoriesDetail('/lk001');
+                if (rightRes.success) {
+                    this.categoriesDetailData = rightRes.data.cate;
+                }
+                // console.log(this.categoriesData, this.categoriesDetailData);
+
+                // 3. 隐藏loading框
+                this.showLoading = false;
+
+                // 4. 初始化滚动框架
+                this.$nextTick(() => {
+                    this.leftScroll = new BScroll('.leftWrapper', {
+                        probeType: 3,
+                        click: true,
+                        scrollY: true,
+                        tap: true,
+                        mouseWheel: true
+                    })
+                });
+            },
+
+            // 2. 处理左边的点击
+           async clickLeftLi(index){
+                // 2.1 改变索引
+                this.currentIndex = index;
+
+                // 2.2 滚动到对应的位置
+                let menuLists = this.$refs.menuList;
+                let el = menuLists[index];
+                // console.log(el);
+
+                // 2.3 滚动到对应元素上
+                this.leftScroll.scrollToElement(el, 300);
+
+                // 2.4 获取右边的数据
+                let rightRes = await getCategoriesDetail(`/lk00${index + 1}`);
+                if (rightRes.success) {
+                    this.categoriesDetailData = rightRes.data.cate;
+                }
+            }
+点击左边获取到对应的右边的数据，将数据传递给子组件，子组件给一条条遍历出来，再传递给孙子组件渲染出来。
+        },
