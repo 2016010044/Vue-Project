@@ -70,3 +70,288 @@ categoriesData不做过多的解释：就是存放请求到的数据，:class就
             }
 点击左边获取到对应的右边的数据，将数据传递给子组件，子组件给一条条遍历出来，再传递给孙子组件渲染出来。
         },
+2.首页和分类的样式已经出来了，接着就是点击商品加入到购物车了。
+在这儿举个例子，在孙子组件FlashSaleItem中有这个图标，点击图标触发一个方法：<div class="iconCartWrapper" @click="addToCart(product)">这个production是它的父组件传过来的商品，然后实现这个方法：
+addToCart(goods){
+                PubSub.publish('homeAddToCart', goods);
+            }
+把它传给他的爷爷组件，因为最终交给爷爷组件去处理，在爷爷组件中订阅发布的这个消息：
+ mounted(){
+           // 订阅消息（添加到购物车的消息）
+           PubSub.subscribe('homeAddToCart', (msg, goods)=>{
+               if(msg === 'homeAddToCart'){
+                   // 判断用户是否登录
+                   if(this.userInfo.token){ // 已经登录
+                       this.dealGoodsAdd(goods)
+                   }else { // 没有登录
+                       this.$router.push('/login');
+                   }
+
+
+               }
+           });
+        },
+这里订阅到了，首先要判断当前是否登录，这里要使用到vuex,首先要全局引入mapSatate，mapMutations,这里用到的是前者，在mapState中定义了userInfo专门存储这个用户信息。vuex对应的是之前建立的store目录，在store目录下有五个文件：actions.js,,index.js,mutations.js,mutations-type.js,state.js,这里用到的是state.js，它一般用来就是保存就像用户信息、购物车信息这样的数据。内容如下：
+export default {
+ userInfo: {}
+}
+当前因为没有登录，所以需要登录才能使得userinfo有值，一般从vuex取state的方式是先从vuex引入mapState，然后在计算属性computed：{
+...mapState(["userInfo"])
+}
+既然当前userInfo值为空，当然得去登录了，配置路由，然后使用this.$router.push("/login"),跳转登录页。
+
+3.登录
+登录这儿首先会出现一个页面就是选择登录方式，这个目前只有手机登录，：
+<router-link tag="button" to="/login">手机登录</router-link>这句代码就是点击手机登录后要跳转到登录页面。在登录页面又分为了密码登录和验证码登录，二者的切换：
+ <a href="javascript:;" :class="{current: loginMode}" @click="dealLoginMode(true)">手机登录</a>
+<a href="javascript:;" :class="{current: !loginMode}"  @click="dealLoginMode(false)">密码登录(测试)</a>
+这个current样式为就是点击选中的样式，
+ <!--手机验证码登录部分-->
+                    <div :class="{current: loginMode}"></div>
+<!--账号登录部分-->
+                    <div :class="{current: !loginMode}"></div>
+这个current是是否隐藏，与上面的不是一回事，接着就是loginMode的值，初始为true,但是上面实现了dealLoginMode方法：
+ dealLoginMode(flag){
+                this.loginMode = flag;
+            },这样就实现了切换。
+1）密码登录：密码登录这儿输入数据登录不用担心，因为都是请求后端接口判断这个是否登录成功，要注意的首先是密码隐藏：就是密码输入显示的明文还是密文：
+ <section class="login-verification">
+<input v-if="pwdMode" type="password" maxlength="20" placeholder="密码" autocomplete="off" v-model="pwd"/>
+<input v-else type="text" maxlength="20" placeholder="密码" autocomplete="off" v-model="pwd"/>
+<div class="switch-show">
+<img src="./images/hide_pwd.png" :class="{on: pwdMode}" @click.prevent="dealPwdMode(false)" alt="" width="20">
+<img src="./images/show_pwd.png" :class="{on: !pwdMode}"  @click.prevent="dealPwdMode(true)" alt="" width="20">
+</div>
+</section>
+首先定义了一个pwdMode，默认为true，也就是说在输入的时候是密文，通过class判断当前显示的图标，当点击当前图标时触发方法，通过方法修改pwdMode的值，：
+ dealPwdMode(flag){
+                this.pwdMode = flag;
+            },
+这儿值得反复揣摩。接着来看一下获取验证码：
+<img
+                                    class="get-verification"
+                                    src="http://demo.itlike.com/web/xlmc/api/captcha"
+                                    alt="captcha"
+                                    @click.prevent="getCaptcha"
+                                    ref="captcha"
+                                >
+ getCaptcha(){
+                // 1.获取验证码的标签
+                let captchaEle = this.$refs.captcha;
+                this.$set(captchaEle, 'src', 'http://demo.itlike.com/web/xlmc/api/captcha?time=' + new Date());
+                // console.log(captchaEle);
+            }
+首先是直接请求一个，当点击时通过方法再次请求一个替换掉原来的：这里通过ref拿到img，然后替换掉img的src属性的内容。
+2）验证码登录：
+首先得判断手机号是否正确，
+<section class="login-message">
+                            <input type="number" maxlength="11" placeholder="手机号" v-model="phone">
+                            <button v-if="!countDown" class="get-verification" :class="{phone_right: phoneRight}" @click.prevent="getVerifyCode()">获取验证码</button>
+                            <button v-else disabled="disabled" class="get-verification">
+                                已发送({{countDown}}s)
+                            </button>
+</section>
+
+computed:{
+            // 验证手机号码是否正确
+            phoneRight(){
+                return /^[1][3,4,5,7,8][0-9]{9}$/.test(this.phone)
+            }
+        },
+通过class来判断手机号是否正确，当正确的时候是能点击的，不正确就是不能点击的，通过countDown来判断当前显示的是哪一个，默认显示的“获取验证码”，点击之后触发方法getVerifyCode()：
+async getVerifyCode(){
+                // 2.1 过滤
+                if(this.phoneRight){
+                    this.countDown = 60;
+                    // 2.2 倒计时
+                    this.intervalId = setInterval(()=>{
+                        this.countDown--;
+                        if(this.countDown === 0){
+                            clearInterval(this.intervalId);
+                        }
+                    }, 1000);
+                    // 2.3 获取短信验证码
+                    let result = await getPhoneCode(this.phone);
+                    console.log(result);
+                }
+            },
+改变countDown的值。
+3）登录：点击返回按钮：
+<button class="login-back" @click.prevent="$router.back()">返回</button>
+点击登录按钮：<button class="login-submit" @click.prevent="login">登录</button>触发login方法。
+async login() {
+                // 3.1 判断登录模式
+                if (this.loginMode) { // 手机验证码登录
+                    // 3.1.1 输入数据校验
+                    if (!this.phone.trim()) {
+                        Toast({
+                            message: '请输入手机号码',
+                            duration: 500
+                        });
+                        return;
+                    } else if (!this.phoneRight) { // 手机号码不正确
+                        Toast({
+                            message: '请输入正确的手机号码',
+                            duration: 500
+                        });
+                        return;
+                    }
+
+                    if (!this.code.trim()) {
+                        Toast({
+                            message: '请输入验证码',
+                            duration: 500
+                        });
+                        return;
+                    } else if (!(/^\d{6}$/gi.test(this.code))) { // 验证码不正确
+                        Toast({
+                            message: '请输入正确的验证码',
+                            duration: 500
+                        });
+                        return;
+                    }
+
+                    // 3.1.2 手机验证码登录
+                    let result = await phoneCodeLogin(this.phone, this.code);
+                    // console.log(result);
+                    if (result.success_code === 200) {
+                        // 4.1 保存用户信息
+                        this.syncUserInfo(result.data);
+                        // 4.2 回到主面板
+                        this.$router.back();
+                    } else {
+                        Toast({
+                            message: '登录失败，手机号码或者验证码不正确！',
+                            duration: 500
+                        });
+                    }
+
+                } else {
+                    // 3.2 用户名和密码登录
+                    if (!this.user_name) {
+                        Toast({
+                            message: '请输入用户名！',
+                            duration: 500
+                        });
+                        return;
+                    } else if (!this.pwd) {
+                        Toast({
+                            message: '请输入密码！',
+                            duration: 500
+                        });
+                        return;
+                    } else if (!this.captcha) {
+                        Toast({
+                            message: '请输入验证码！',
+                            duration: 500
+                        });
+                        return;
+                    }
+                    // 3.2.1 发起请求
+                    let result = await pwdLogin(this.user_name, this.pwd, this.captcha);
+                    // console.log(result);
+                    if (result.success_code === 200) {
+                        // 4.1 保存用户信息
+                        this.syncUserInfo(result.data);
+                        // 4.2 回到主面板
+                        this.$router.back();
+                    } else {
+                        Toast({
+                            message: '登录失败，用户名或者密码不正确！',
+                            duration: 500
+                        });
+                    }
+                }
+            },
+输入信息请求后，后端会返回用户的信息，包括token等。然后存用户信息，这里通过vuex的action.js，引入mapActions,接着在methods中：...mapActions(['syncUserInfo']),
+vuex的补充：
+总之就是state只能被mutation改变，每一个mutation都有一个类型和处理函数，所以处理函数自动获得一个默认参数state，action去commit一个mutation，它要指定一个mutation，还要做什么事情（函数）。
+接着来看一下action.js：
+import {USER_INFO} from './mutations-type'
+export default {
+    // 1. 同步用户信息
+    syncUserInfo({commit}, userInfo) {
+        commit(USER_INFO, {userInfo})
+    },
+}
+这里的userInfo就是从服务器拿到的数据（包含了token等），接着到mutation中：
+import {
+    USER_INFO,
+} from './mutations-type'
+import {getStore, removeStore, setStore} from './../config/global'
+import Vue from 'vue'
+export default {
+// 7. 保存用户信息报本地
+    [USER_INFO](state, {userInfo}){
+        state.userInfo = userInfo;
+        setStore('userInfo', state.userInfo);
+    },
+}
+这里的setStore就是把信息保存到本地：
+export const setStore = (name, content) =>{
+    if(!name) return;
+    if(typeof content !== 'string'){
+        content = JSON.stringify(content);
+    }
+    window.localStorage.setItem(name, content);
+};
+
+/*
+  本地化获取
+*/
+export const  getStore = (name)=>{
+    if(!name) return;
+    return window.localStorage.getItem(name);
+};
+
+/*
+  本地化删除
+*/
+export const  removeStore = (name)=>{
+    if(!name) return;
+    return window.localStorage.removeItem(name);
+};
+这样state 中的info就有值了。在Home.vue没有值就到登录，有值就执行如下方法。
+
+4.订阅到了，即拿到了要加入购物车的商品，接着在methods中实现这个方法。
+ async dealGoodsAdd(goods){
+                 // 2.1 调用服务器端的接口
+                 let result = await addGoodsToCart(this.userInfo.token, goods.id, goods.name, goods.price, goods.small_image,);
+                  console.log(result);
+                 if(result.success_code === 200){
+                     this.ADD_GOODS({
+                         goodsId: goods.id,
+                         goodsName: goods.name,
+                         smallImage: goods.small_image,
+                         goodsPrice: goods.price
+                     });
+                     // 提示用户
+                     Toast({
+                         message: '添加到购物车成功！',
+                         duration: 800
+                     });
+                 }
+            }
+首先调用接口，服务器然后会给一个结果，接着就是网购物车中存数据了，
+// 1. 往购物车中添加数据
+    [ADD_GOODS](state, {goodsId, goodsName, smallImage, goodsPrice}){
+          let shopCart = state.shopCart;
+          // 1.1 判断商品是否存在
+          if(shopCart[goodsId]){ // 存在
+              shopCart[goodsId]['num']++;
+          }else { // 不存在
+              shopCart[goodsId] = {
+                  "num": 1,
+                  "id": goodsId,
+                  "name": goodsName,
+                  "small_image": smallImage,
+                  "price": goodsPrice,
+                  "checked": true
+              }
+          }
+          // 1.2  产生新对象
+         state.shopCart = {...shopCart};
+         // 1.3 存入本地
+        setStore('shopCart', state.shopCart);
+    },
+这代码就不做过多解释，最终将购物车的东西存到了本地。分类和首页原理不太一样。，首页是孙子给爷爷发消息，爷爷通过vuex来实现。而在分类中子组件直接使用vuex，不通过发布订阅这样的来实现了，直接调用vuex的ADD_GOODS，将数据存到shopCart，最终存到本地。

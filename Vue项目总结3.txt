@@ -1,0 +1,336 @@
+1.Cart：
+首先点击购物车按钮，如果userInfo.token有值（因为一个token对应一个user_id）,那么才能显示购物车的数据，否则就到登录页面：
+<div id="cart" v-if="userInfo.token"></div>
+<SelectLogin v-else/>
+如果已经登录了，那么就应该先初始化一下购物车的信息，这个初始化应该在Dashboard中做好，当点击购物车按钮的时候之间显示。：
+async initShopCart(){
+                if(this.userInfo.token){ // 已经登录
+                    // 1. 获取当前用户购物车中的商品(服务器端)
+                    let result = await getGoodsCart(this.userInfo.token);
+                    console.log(result);
+                    // 2. 如果获取成功
+                    if(result.success_code === 200){
+                         let cartArr = result.data;
+                         let shopCart = {};
+                         // 2.1 遍历
+                        cartArr.forEach((value)=>{
+                            shopCart[value.goods_id] = {
+                                "num": value.num,
+                                "id": value.goods_id,
+                                "name": value.goods_name,
+                                "small_image": value.small_image,
+                                "price": value.goods_price,
+                                "checked": value.checked
+                            }
+                        });
+                        // 2.2 本地数据同步
+                        setStore('shopCart', shopCart);
+                        this.INIT_SHOP_CART()
+                    }
+                }
+            }
+然后再mounted中调用，再mutation.js:
+ [INIT_SHOP_CART](state){
+        let initCart = getStore('shopCart');
+        if(initCart){
+            state.shopCart = JSON.parse(initCart);
+        }
+    },
+在说购物车之前还有就是在DashBoard中实现自动登录。
+在action.js中：
+async reqUserInfo({commit}){
+        // 2.1 从本地获取数据
+        let userInfo = JSON.parse(getStore('userInfo'));
+        if(userInfo){
+            commit(USER_INFO, {userInfo});
+        }else {
+            // 2.2 从服务器端验证
+            let result = await getUserInfo();
+            // console.log(result);
+            if(200 === result.success_code){
+                commit(USER_INFO, {userInfo: result.data});
+            }
+        }
+    }
+从本地获取用户信息，本地没有从服务器去找，最后将使得在state中的userInfo有值，最后在DashBoard的调用该方法：
+ this.reqUserInfo();之前应该先在methods中引入。...mapActions(['reqUserInfo']),（自动登录原理就是这样，但是这个存在bug）
+
+接着来说一下，购物车是怎么和用户绑定的：在加入购物车的时候，
+let result = await addGoodsToCart(this.userInfo.token, goods.id, goods.name, goods.price, goods.small_image,);我们调用这个接口将商品加入了购物车，其中就传了一个用户的token，然后服务器给我们一个结果，这时候按道理来说用户和添加到购物车的商品已经绑定了，每添加一个商品，服务器都会给我们结果，这个结果每次都包含user_id，即token，然后就是在初始化的时候，就根据当前用户的token从服务器将数据取出来。
+
+接着来到购物车，首先是底部tabbar购物车是否带数字（即商品的总数量，）,在Dashboard中：
+ <van-tabbar-item replace to="/dashboard/cart" :info="goodsNum > 0 ? goodsNum : ''">
+computed: {
+            goodsNum(){
+                if(this.shopCart){
+                    // 总的购物车商品数量
+                    let num = 0;
+                    // console.log(Object.values(this.shopCart));
+                    Object.values(this.shopCart).forEach((goods, index)=>{
+                        num += goods.num;
+                    });
+                    return num;
+                }else {
+                   return 0;
+                }
+            }
+        },
+如果用户登录了，那么在初始化的时候，从服务器拿到数据，然后将商品信息存到本地，然后遍历本地shopCart，拿到商品数量。
+
+购物车页面展示：
+头部：
+ <header class="titleWrapper">
+            <h4><strong>购物车</strong></h4>
+            <button class="clearCart" @click="clearCart">清空购物车</button>
+        </header>
+该方法的实现：
+ clearCart(){
+                Dialog.confirm({
+                    title: '小撩温馨提示',
+                    message: '确定清空所有商品吗?'
+                }).then(async () => {
+                    let result = await clearAllCart(this.userInfo.token);
+                    // console.log(result);
+                    if(result.success_code === 200){ // 删除成功
+                        this.CLEAR_CART();
+                    }else {
+                        Toast({
+                            message: '出了点小问题哟~',
+                            duration: 500
+                        });
+                    }
+                }).catch(() => { // 点击了取消
+                    // do nothing
+                });
+            },
+mutations.js:
+[CLEAR_CART](state){
+        state.shopCart = null;
+        state.shopCart = {...state.shopCart};
+        setStore('shopCart', state.shopCart);
+    },
+就是根据用户token，将服务器和本地的购物车信息全部清空。
+接着就是一条条商品信息了。
+ <!--中间内容-->
+            <main class="contentWrapperList">
+                <section>
+                    <div class="shopCartListCon" v-for="(goods, index) in shopCart" :key="goods.id">
+                        <div class="left">
+                            <a
+                            href="javascript:;"
+                            class="cartCheckBox"
+                            :checked="goods.checked"
+                            @click.stop="singerGoodsSelected(goods.id)"
+                            >
+                            </a>
+                        </div>
+                        <div class="center">
+                            <img :src="goods.small_image" alt="">
+                        </div>
+                        <div class="right">
+                            <a href="#">{{goods.name}}</a>
+                            <div class="bottomContent">
+                                <p class="shopPrice">{{goods.price | moneyFormat}}</p>
+                                <div class="shopDeal">
+                                    <span @click="removeOutCart(goods.id, goods.num)">-</span>
+                                    <input disabled type="number" v-model="goods.num">
+                                    <span @click="addToCart(goods.id, goods.name, goods.small_image ,goods.price)">+</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+<!--底部通栏-->
+            <div class="tabBar">
+                <div class="tabBarLeft">
+                    <a
+                        href="javascript:;"
+                        class="cartCheckBox"
+                        :checked="isSelectedAll"
+                        @click.stop="selectedAll(isSelectedAll)"
+                    >
+                    </a>
+                    <span style="font-size: 16px;">全选</span>
+                    <div class="selectAll">
+                        合计：<span class="totalPrice">{{totalPrice | moneyFormat}}</span>
+                    </div>
+                </div>
+                <div class="tabBarRight">
+                    <button class="pay" @click="toPay">去结算({{goodsCount}})</button>
+                </div>
+            </div>
+先来说一下这个moneyFormat它是定义的一个过滤器，通过它来改变金额的样式。在config/filters.js:
+import Vue from  'vue'
+// 人民币过滤器
+Vue.filter('moneyFormat', (value)=>{
+    return '¥' + Number(value).toFixed(2);
+});接着在main.js中引入即可。
+
+接着来说一下增加商品和移除商品：
+添加商品：
+async addToCart(goodsId, goodsName, smallImage, goodsPrice){
+                let result = await changeCartNum(this.userInfo.token, goodsId, 'add');
+                // console.log(result);
+                if(result.success_code === 200){ // 修改成功
+                    this.ADD_GOODS({
+                        goodsId,
+                        goodsName,
+                        smallImage,
+                        goodsPrice
+                    });
+                }else {
+                    Toast({
+                        message: '出了点小问题哟~',
+                        duration: 500
+                    });
+                }
+            },
+
+将商品移除购物车：
+async removeOutCart(goodsId, goodsNum){
+                if(goodsNum > 1){
+                    let result = await changeCartNum(this.userInfo.token, goodsId, 'reduce');
+                    // console.log(result);
+                    if(result.success_code === 200){ // 修改成功
+                        this.REDUCE_CART({goodsId});
+                    }else {
+                        Toast({
+                            message: '出了点小问题哟~',
+                            duration: 500
+                        });
+                    }
+                }else if(goodsNum === 1){ // 挽留
+                    Dialog.confirm({
+                        title: '小撩温馨提示',
+                        message: '确定删除该商品吗?'
+                    }).then(async ()=> {
+                        let result = await changeCartNum(this.userInfo.token, goodsId, 'reduce');
+                        // console.log(result);
+                        if(result.success_code === 200){ // 修改成功
+                            this.REDUCE_CART({goodsId});
+                        }else {
+                            Toast({
+                                message: '出了点小问题哟~',
+                                duration: 500
+                            });
+                        }
+                    }).catch(() => { // 点击了取消
+                        // do nothing
+                    });
+                }
+            },
+mutations.js:
+[REDUCE_CART](state, {goodsId}){
+        let shopCart = state.shopCart;
+        let goods = shopCart[goodsId];
+        if(goods){ // 找到该商品
+            if(goods['num'] > 0){
+                goods['num']--;
+                // 3.1 判断是否只有0个
+                if(goods['num'] === 0){
+                    delete shopCart[goodsId];
+                }
+            }else {
+                goods = null;
+            }
+            // 3.2 同时数据
+            state.shopCart = {...shopCart};
+            setStore('shopCart', state.shopCart);
+        }
+    },
+
+单个商品选中和取消选中:
+ async singerGoodsSelected(goodsId){
+                let result = await singerGoodsSelect(this.userInfo.token, goodsId);
+                if(result.success_code === 200){
+                    this.SELECTED_SINGER_GOODS({goodsId});
+                }
+            },
+mutations.js:
+[SELECTED_SINGER_GOODS](state, {goodsId}){
+        let shopCart = state.shopCart;
+        let goods = shopCart[goodsId];
+        if(goods){
+            if(goods.checked){ // 存在该属性
+                goods.checked = !goods.checked;
+            } else {
+                Vue.set(goods, 'checked', true);
+                // goods.checked = true;
+            }
+            // 4.1 同时数据
+            state.shopCart = {...shopCart};
+            setStore('shopCart', state.shopCart);
+        }
+    },
+
+全选和取消全选：
+这个是点击全选复选框，
+ async selectedAll(isSelected){
+                let result = await allGoodsSelect(this.userInfo.token, isSelected);
+                if(result.success_code === 200){
+                    this.SELECTED_All_GOODS({isSelected});
+                }
+            },
+    [SELECTED_All_GOODS](state, {isSelected}){
+        let shopCart = state.shopCart;
+        Object.values(shopCart).forEach((goods, index)=>{
+            if(goods.checked){ // 存在该属性
+                goods.checked = !isSelected;
+            } else {
+                Vue.set(goods, 'checked', !isSelected);
+            }
+        });
+        state.shopCart = {...shopCart};
+    },
+这个是实现单选复选框决定全选复选框：
+computed:{
+isSelectedAll(){
+                let goodsCount =  Object.values(this.shopCart).length;
+                let tag = goodsCount > 0;
+                Object.values(this.shopCart).forEach((goods, index)=>{
+                    if(!goods.checked){
+                        tag = false;
+                    }
+                });
+                return tag;
+            },
+}
+想了想还是说一下吧，这儿有两行代码：
+:checked="isSelectedAll"
+@click.stop="selectedAll(isSelectedAll)"
+是底部全选复选框的代码，复选框的是否勾选决定于isSelectedAll的返回值，如上面的代码，最终返回tag,tag为true就勾选，为false就不勾选。下面的这行代码是点击底部复选框，当tag为true的时候，点击它，使得每个单选框为不勾选，当然自己也不勾选，当为false以此类推。
+
+计算底部合计总金额：
+<div class="selectAll">
+                        合计：<span class="totalPrice">{{totalPrice | moneyFormat}}</span>
+</div>
+computed:{
+totalPrice(){
+                let totalPrice = 0;
+                Object.values(this.shopCart).forEach((goods, index)=>{
+                    if(goods.checked){
+                        totalPrice += goods.price * goods.num;
+                    }
+                });
+                return totalPrice;
+            }
+}
+
+选中商品的件数，这里说的是商品种类的个数。
+computed:{
+goodsCount(){
+                let selectedGoodsCount = 0;
+                Object.values(this.shopCart).forEach((goods, index)=>{
+                    if(goods.checked){
+                        selectedGoodsCount += 1;
+                    }
+                });
+                return selectedGoodsCount;
+            },
+}
+
+
+
+
+

@@ -1,0 +1,249 @@
+我的：
+<template>
+    <div id="mine" v-if="userInfo.token">
+        <van-nav-bar
+                title="我的"
+                :fixed=true
+                :border=false
+        ></van-nav-bar>
+        <!--用户-->
+        <van-cell-group style="margin-top: 2.6rem;">
+            <van-cell
+                    style="background-color: #3bba63;color:#FFF;"
+                    label-class="labelClass"
+                    is-link
+                    :center=true
+                    @click="$router.push('/dashboard/mine/userCenter')"
+            >
+                <template slot="title">
+                    <div class="personMsg">
+                        <img class="iconImage" src="./images/yjh.png" alt="">
+                        <div class="personInfo">
+                            <span>{{userInfo.real_name}}</span>
+                            <span>手机号：{{userInfo.phone}}</span>
+                        </div>
+                    </div>
+                </template>
+            </van-cell>
+        </van-cell-group>
+        <!--我的订单-->
+        <van-cell-group>
+            <van-cell
+                title="我的订单"
+                icon="label"
+                value="查看全部订单"
+                @click="$router.push({path: '/dashboard/mine/mineOrder'})"
+                is-link>
+            </van-cell>
+            <router-link tag="div" :to="{path: '/dashboard/mine/mineOrder'}">
+                <van-grid>
+                    <van-grid-item
+                            v-for="(order, index) in orderData"
+                            :key="index"
+                            :icon="order.icon"
+                            :text="order.title">
+                    </van-grid-item>
+                </van-grid>
+            </router-link>
+        </van-cell-group>
+        <!--我的优惠券-->
+        <van-cell-group style="margin-top: 0.4rem">
+            <van-cell title="我的优惠券" icon="gold-coin" value="1张" is-link></van-cell>
+            <van-cell title="我的收货地址" icon="todo-list" is-link></van-cell>
+        </van-cell-group>
+        <!--联系客服-->
+        <van-cell-group style="margin-top: 0.4rem">
+            <van-cell title="联系客服" icon="phone" value="客服时间 07:00-22:00" is-link></van-cell>
+            <van-cell title="意见反馈" icon="smile-comment" is-link></van-cell>
+        </van-cell-group>
+        <!--小撩买菜-->
+        <van-cell-group style="margin-top: 0.4rem">
+            <van-cell title="小撩买菜" icon="gift-card" value="下载APP体验更佳" is-link></van-cell>
+        </van-cell-group>
+
+        <!--路由的出口-->
+        <transition name="router-slider" mode="out-in">
+            <router-view></router-view>
+        </transition>
+    </div>
+    <SelectLogin v-else/>
+</template>
+
+<script>
+    import SelectLogin from './../../views/login/SelectLogin'
+
+    import {mapState} from 'vuex'
+
+    export default {
+        name: "Mine",
+        data() {
+            return {
+                orderData: [
+                    {icon: 'cart-circle-o', title: '待支付'},
+                    {icon: 'gift-o', title: '待收货'},
+                    {icon: 'smile-comment-o', title: '待评价'},
+                    {icon: 'cash-back-record', title: '售后/退款'}
+                ]
+            }
+        },
+        computed: {
+            ...mapState(["userInfo"])
+        },
+        components: {
+            SelectLogin
+        }
+    }
+</script>
+
+userCenter.vue:
+<button @click="logOut">退出登录</button>
+async logOut(){
+                let result = await getLogOut();
+                if(result.success_code === 200){
+                    // 清空本地的数据
+                    this.RESET_USER_INFO();
+                    // 清空本地的购物车
+                    this.CLEAR_CART();
+                    Toast({
+                       message: '退出登录成功！',
+                       duration: 500
+                    });
+                }
+            }
+
+[CLEAR_CART](state){
+        state.shopCart = null;
+        state.shopCart = {...state.shopCart};
+        setStore('shopCart', state.shopCart);
+    },
+ [RESET_USER_INFO](state){
+        state.userInfo = {};
+        removeStore('userInfo');
+    }
+
+mineOrder.vue:代码比较简单，不在赘述
+<template>
+    <div id="orderDetail">
+        <!--导航栏-->
+        <van-nav-bar
+                title="我的订单"
+                left-arrow
+                :fixed=true
+                :border=true
+                @click-left="$router.go(-1)"
+        ></van-nav-bar>
+
+        <van-tabs
+                v-model="activeName"
+                style="margin-top: 2.6rem"
+                title-active-color="#75a342"
+                color="#75a342"
+                @click="dealWithTabClick"
+        >
+            <van-tab title="全部" name="a">
+                <MineOrderItem v-for="(order, index) in allOrderArr" :order="order" :key="order._id"/>
+            </van-tab>
+            <van-tab title="待支付" name="b">
+                <MineOrderItem v-for="(order, index) in allWillOrderArr" :order="order" :key="order._id"/>
+            </van-tab>
+            <van-tab title="待收货" name="c">
+                <MineOrderItem v-for="(order, index) in allPayOrderArr" :order="order" :key="order._id"/>
+            </van-tab>
+        </van-tabs>
+    </div>
+</template>
+
+<script>
+    import MineOrderItem from './components/MineOrderItem'
+    import {getOrder} from './../../../service/api/index'
+    import {mapState} from 'vuex'
+    import {Toast} from 'vant'
+
+    export default {
+        name: "MineOrder",
+        data() {
+            return {
+                activeName: 'a',
+                allOrderArr: null, // 所有的订单
+                allWillOrderArr: null, // 所有待支付的订单
+                allPayOrderArr: null, // 所有支付的订单
+            };
+        },
+        computed: {
+            ...mapState(['userInfo'])
+        },
+        mounted() {
+            // 获取订单数据
+            this.initOrder();
+        },
+        components: {
+            MineOrderItem
+        },
+        methods: {
+            async initOrder() {
+                let result = await getOrder(this.userInfo.token);
+                if (result.success_code === 200) {
+                    this.allOrderArr = result.data;
+                    console.log(this.allOrderArr);
+                } else {
+                    Toast({
+                        message: '订单获取失败',
+                        duration: 600
+                    });
+                }
+            },
+            async dealWithTabClick(name, title) {
+                if (name === 'a') {
+                    this.allOrderArr = await this.getTabOrder();
+                } else if (name === 'b') {
+                    this.allWillOrderArr = await this.getTabOrder('will')
+                } else if (name === 'c') {
+                    this.allPayOrderArr = await this.getTabOrder('pay')
+                }
+            },
+            async getTabOrder(status) {
+                let result = await getOrder(this.userInfo.token, status);
+                if (result.success_code === 200) {
+                    return result.data;
+                } else {
+                    Toast({
+                        message: '订单获取失败',
+                        duration: 600
+                    });
+                }
+            }
+
+        }
+    }
+</script>
+最后那个：MineOrderItem.vue
+<template>
+    <div id="myOrderItem">
+        <div class="itemTop">
+            <van-cell :title="order.arrive_time" :value="`${order.order_status === 'pay' ? '已支付': '待支付'}`"></van-cell>
+        </div>
+        <div class="itemCenter">
+            <div class="centerLeft">
+                <img v-for="(cartGoods, index) in order.cart_shop.slice(0, 5)" :src="cartGoods.small_image" alt="" width="30">
+            </div>
+            <div class="centerRight">{{order.cart_shop.length > 6 ? '…' : ''}}</div>
+        </div>
+        <div class="itemBottom">
+            <van-cell title=" " :value="`共${order.cart_shop.length}份商品 实付¥${order.shop_price + order.dis_price}`"></van-cell>
+        </div>
+    </div>
+</template>
+
+<script>
+    export default {
+        name: "MineOrderItem",
+        props:{
+            order: Object
+        },
+    }
+</script>
+
+具体可以看下代码
+
+
+
