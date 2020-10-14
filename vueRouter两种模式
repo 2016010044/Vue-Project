@@ -1,0 +1,3 @@
+1）hash和history
+这里的 hash 就是指 url 尾巴后的 # 号以及后面的字符。
+如果不想要很丑的 hash，我们可以用路由的 history 模式；
